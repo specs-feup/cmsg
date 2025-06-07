@@ -19,6 +19,10 @@ cmsg_free (cmsg *msg)
   if (msg)
     {
       msgpack_sbuffer_destroy (msg->sbuf);
+      msgpack_packer_free (msg->pk);
+
+      free (msg->sbuf);
+      free (msg->pk);
 
       free (msg);
     }
@@ -47,6 +51,8 @@ cmsg_print (cmsg *msg)
     {
       msgpack_object_print (stdout, result.data);
     }
+  
+  printf("\n");
 
   msgpack_unpacked_destroy (&result);
 }
@@ -98,6 +104,16 @@ cmsg_insert_pair_i32 (cmsg *msg, char *key, int32_t value)
 }
 
 cmsg_err
+cmsg_insert_pair_i64 (cmsg *msg, char *key, int64_t value)
+{
+  msgpack_pack_str (msg->pk, strlen (key));
+  msgpack_pack_str_body (msg->pk, key, strlen (key));
+  msgpack_pack_int64 (msg->pk, value);
+
+  return CMSG_OK;
+}
+
+cmsg_err
 cmsg_insert_pair_ui8 (cmsg *msg, char *key, uint8_t value)
 {
   msgpack_pack_str (msg->pk, strlen (key));
@@ -127,8 +143,30 @@ cmsg_insert_pair_ui32 (cmsg *msg, char *key, uint32_t value)
   return CMSG_OK;
 }
 
+cmsg_err
+cmsg_insert_pair_ui64 (cmsg *msg, char *key, uint64_t value)
+{
+  msgpack_pack_str (msg->pk, strlen (key));
+  msgpack_pack_str_body (msg->pk, key, strlen (key));
+  msgpack_pack_uint64 (msg->pk, value);
+
+  return CMSG_OK;
+}
+
+cmsg_err
+cmsg_insert_pair_str (cmsg *msg, char *key, char *value)
+{
+  msgpack_pack_str (msg->pk, strlen (key));
+  msgpack_pack_str_body (msg->pk, key, strlen (key));
+
+  msgpack_pack_str (msg->pk, strlen (value));
+  msgpack_pack_str_body (msg->pk, key, strlen (value));
+
+  return CMSG_OK;
+}
+
 static msgpack_object *
-private_get_map_object_from_key(msgpack_object *obj, const char *key)
+private_get_map_object_from_key (msgpack_object *obj, const char *key)
 {
   if (obj->type != MSGPACK_OBJECT_MAP)
     return NULL;
@@ -136,9 +174,8 @@ private_get_map_object_from_key(msgpack_object *obj, const char *key)
   for (size_t i = 0; i < obj->via.map.size; ++i)
     {
       msgpack_object k = obj->via.map.ptr[i].key;
-      if (k.type == MSGPACK_OBJECT_STR &&
-          k.via.str.size == strlen(key) &&
-          strncmp(k.via.str.ptr, key, k.via.str.size) == 0)
+      if (k.type == MSGPACK_OBJECT_STR && k.via.str.size == strlen (key)
+          && strncmp (k.via.str.ptr, key, k.via.str.size) == 0)
         return &(obj->via.map.ptr[i].val);
     }
 
@@ -314,4 +351,56 @@ uint32_t
 cmsg_get_ui32_from_key (cmsg *msg, char *key, cmsg_err *err)
 {
   return 0;
+}
+
+cmsg *
+cmsg_get_nested_map_from_key (cmsg *msg, char *key, cmsg_err *err)
+{
+  if (!msg || !key || !err)
+    {
+      if (err)
+        *err = CMSG_ERR_INVALID;
+      return NULL;
+    }
+
+  msgpack_unpacked result;
+  msgpack_unpacked_init (&result);
+
+  bool ok
+      = msgpack_unpack_next (&result, msg->sbuf->data, msg->sbuf->size, NULL);
+  if (!ok || result.data.type != MSGPACK_OBJECT_MAP)
+    {
+      msgpack_unpacked_destroy (&result);
+      *err = CMSG_ERR_PARSE;
+      return NULL;
+    }
+
+  msgpack_object *val = private_get_map_object_from_key (&result.data, key);
+  if (!val)
+    {
+      msgpack_unpacked_destroy (&result);
+      *err = CMSG_ERR_KEY_NOT_FOUND;
+      return NULL;
+    }
+
+  if (val->type != MSGPACK_OBJECT_MAP)
+    {
+      msgpack_unpacked_destroy (&result);
+      *err = CMSG_ERR_TYPE_MISMATCH;
+      return NULL;
+    }
+
+  cmsg *nested = cmsg_create ();
+  if (!nested)
+    {
+      msgpack_unpacked_destroy (&result);
+      *err = CMSG_ERR_ALLOC;
+      return NULL;
+    }
+
+  msgpack_pack_object (nested->pk, *val);
+
+  msgpack_unpacked_destroy (&result);
+  *err = CMSG_OK;
+  return nested;
 }

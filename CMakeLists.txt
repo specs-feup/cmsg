@@ -25,5 +25,4 @@ install(TARGETS cmsg
 
 add_executable(cmsg_main ${SRC_DIR}/main.c)
 target_include_directories(cmsg_main PRIVATE ${INC_DIR})
-target_link_libraries(cmsg_main cmsg)
-
+target_link_libraries(cmsg_main cmsg msgpack-c)

@@ -19,7 +19,6 @@ cmsg_free (cmsg *msg)
   if (msg)
     {
       msgpack_sbuffer_destroy (msg->sbuf);
-      msgpack_packer_free (msg->pk);
 
       free (msg->sbuf);
       free (msg->pk);
@@ -51,8 +50,8 @@ cmsg_print (cmsg *msg)
     {
       msgpack_object_print (stdout, result.data);
     }
-  
-  printf("\n");
+
+  printf ("\n");
 
   msgpack_unpacked_destroy (&result);
 }
